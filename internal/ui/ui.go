@@ -1,20 +1,26 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"timer-cli/internal/task"
-	"strings"
-	"fmt"
-	"time"
 )
 
+const saveFile = "tasks.json"
+
 func Start(taskManager *task.TaskManager) error {
+	// Load tasks from file on startup
+	taskManager.LoadTasksFromFile(saveFile)
+
 	app := tview.NewApplication()
 
-	// Create panels
+	// Create UI panels
 	tasksPanel := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft)
-	cmdInput := tview.NewInputField().SetLabel("Command: ")
+	cmdInput := tview.NewInputField().SetLabel("$ ")
 
 	// Layout
 	flex := tview.NewFlex().
@@ -25,12 +31,20 @@ func Start(taskManager *task.TaskManager) error {
 	// Update tasks display
 	updateTasksPanel := func() {
 		var sb strings.Builder
-		sb.WriteString("[::b]Current Tasks:[::-]\n")
-		sb.WriteString(fmt.Sprintf("Current Time: %s\n\n", time.Now().Format("15:04:05")))
+		sb.WriteString(fmt.Sprintf("Current Time: [::b]%s[::-]\n\n", time.Now().Format("15:04:05")))
 
-		for _, task := range taskManager.Tasks {
-			status := fmt.Sprintf("%s - %s (%s", task.Name, task.Remaining.Round(time.Second), task.State)
-			if task.Loop {
+		for _, t := range taskManager.Tasks {
+			// Update remaining time if task is running
+			if t.State == "running" {
+				t.Remaining = t.Duration - time.Since(t.StartTime)
+				if t.Remaining <= 0 {
+					t.State = "completed"
+					t.Remaining = 0
+				}
+			}
+
+			status := fmt.Sprintf("%d %s - %s (%s", t.ID, t.Name, t.Remaining.Round(time.Second), t.State)
+			if t.Loop {
 				status += ", loop"
 			}
 			status += ")"
@@ -42,16 +56,16 @@ func Start(taskManager *task.TaskManager) error {
 
 	// Command handling
 	cmdInput.SetDoneFunc(func(key tcell.Key) {
-		cmd := cmdInput.GetText()
+		cmd := strings.TrimSpace(cmdInput.GetText())
 		cmdInput.SetText("")
 
-		parts := strings.Split(cmd, " ")
-		if len(parts) < 1 {
+		parts := strings.Fields(cmd)
+		if len(parts) == 0 {
 			return
 		}
 
 		switch parts[0] {
-		case "add":
+		case "add", "+", "a":
 			if len(parts) < 3 {
 				return
 			}
@@ -62,12 +76,41 @@ func Start(taskManager *task.TaskManager) error {
 			}
 			taskManager.AddTask(name, duration)
 
-		case "start":
+		case "start", "s", "continue", "c":
 			if len(parts) < 2 {
 				return
 			}
 			id := parseID(parts[1])
 			taskManager.StartTask(id)
+
+		case "stop", "pause", "p":
+			if len(parts) < 2 {
+				return
+			}
+			id := parseID(parts[1])
+			taskManager.StopTask(id)
+
+		case "modify", "m":
+			if len(parts) < 4 {
+				return
+			}
+			id := parseID(parts[1])
+			if parts[2] == "name" {
+				taskManager.ModifyTaskName(id, parts[3])
+			} else if parts[2] == "duration" {
+				duration, err := time.ParseDuration(parts[3])
+				if err != nil {
+					return
+				}
+				taskManager.ModifyTaskDuration(id, duration)
+			}
+
+		case "quit", "exit", "q":
+			taskManager.SaveTasksToFile(saveFile)
+			app.Stop()
+
+		default:
+			tasksPanel.SetText("[red]Unknown command![-]")
 		}
 
 		updateTasksPanel()
