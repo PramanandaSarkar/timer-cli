@@ -1,0 +1,4 @@
+app:
+  name: "timer-cli"
+  version: "1.0.0"
+  log_level: "info"
