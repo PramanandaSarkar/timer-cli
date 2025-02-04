@@ -95,9 +95,9 @@ func Start(taskManager *task.TaskManager) error {
 				return
 			}
 			id := parseID(parts[1])
-			if parts[2] == "name" {
+			if parts[2] == "-n" {
 				taskManager.ModifyTaskName(id, parts[3])
-			} else if parts[2] == "duration" {
+			} else if parts[2] == "-d" {
 				duration, err := time.ParseDuration(parts[3])
 				if err != nil {
 					return
